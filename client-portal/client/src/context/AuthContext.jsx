@@ -1,17 +1,24 @@
-import { createContext, useCallback, useEffect, useMemo, useState } from "react";
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
 import api, { tokenStore } from "../api/axios";
 
 export const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(true);
 
     // On mount: if we have a token, fetch /me to hydrate user
     useEffect(() => {
         const access = tokenStore.getAccess();
         if (!access) {
-            setLoading(false);
+            setIsLoading(false);
             return;
         }
 
@@ -21,7 +28,7 @@ export function AuthProvider({ children }) {
                 tokenStore.clear();
                 setUser(null);
             })
-            .finally(() => setLoading(false));
+            .finally(() => setIsLoading(false));
     }, []);
 
     const login = useCallback(async (email, password) => {
@@ -50,9 +57,25 @@ export function AuthProvider({ children }) {
     }, []);
 
     const value = useMemo(
-        () => ({ user, loading, login, register, logout, isAuthenticated: !!user }),
-        [user, loading, login, register, logout]
+        () => ({
+            user,
+            isLoading,
+            login,
+            register,
+            logout,
+            isAuthenticated: !!user,
+        }),
+        [user, isLoading, login, register, logout]
     );
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+// ✅ Custom hook so components can consume the context safely
+export function useAuth() {
+    const ctx = useContext(AuthContext);
+    if (!ctx) {
+        throw new Error("useAuth must be used within an AuthProvider");
+    }
+    return ctx;
 }

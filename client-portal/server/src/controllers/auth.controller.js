@@ -1,5 +1,6 @@
 // src/controllers/auth.controller.js
 const User = require("../models/User");
+const Organization = require("../models/Organization");
 const ApiError = require("../utils/ApiError");
 const {
     signAccessToken,
@@ -15,6 +16,7 @@ async function issueTokens(user) {
     const accessToken = signAccessToken({
         sub: user._id.toString(),
         role: user.role,
+        organization: user.organization?.toString(),
     });
 
     const refreshToken = signRefreshToken({
@@ -38,33 +40,70 @@ async function issueTokens(user) {
     return { accessToken, refreshToken };
 }
 
+// Helper: turn "My Company" → "my-company-4f2a"
+function slugify(name) {
+    const base = name
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+    const suffix = Math.random().toString(36).slice(2, 6);
+    return `${base}-${suffix}`;
+}
+
 // POST /api/auth/register
+// First user of a new company → creates Organization + is Owner
 exports.register = async (req, res, next) => {
     try {
-        const { firstName, lastName, email, password, phone } = req.body;
+        const { firstName, lastName, email, password, phone, companyName } = req.body;
+
+        if (!companyName) {
+            throw new ApiError(400, "companyName is required");
+        }
 
         const existing = await User.findOne({ email });
         if (existing) {
             throw new ApiError(409, "Email already registered");
         }
 
-        // NOTE: role is intentionally NOT read from req.body.
+        // 1. Create the organization
+        //    Owner field is set after we create the user (circular ref), so:
+        //    — create user first with a placeholder, then set org.owner
+        //    OR — create org without owner, then set both. We'll do the latter.
+        const org = await Organization.create({
+            name: companyName,
+            slug: slugify(companyName),
+            owner: new (require("mongoose").Types.ObjectId)(), // temp, set below
+        });
+
+        // 2. Create the owner user
         const user = await User.create({
+            organization: org._id,
             firstName,
             lastName,
             email,
             password,
             phone: phone || null,
-            role: "Client",
+            role: "Owner",              // 🎯 first user is Owner
         });
 
+        // 3. Now link org.owner to the real user
+        org.owner = user._id;
+        await org.save();
+
+        // 4. Issue tokens
         const { accessToken, refreshToken } = await issueTokens(user);
 
         res.status(201).json({
             success: true,
-            message: "Account created",
+            message: "Account and organization created",
             data: {
                 user: user.toJSON(),
+                organization: {
+                    _id: org._id,
+                    name: org.name,
+                    slug: org.slug,
+                },
                 accessToken,
                 refreshToken,
             },
@@ -74,14 +113,16 @@ exports.register = async (req, res, next) => {
     }
 };
 
-// POST /api/auth/login
+// POST /api/auth/login  (unchanged, but populate org)
 exports.login = async (req, res, next) => {
     try {
         const { email, password } = req.body;
 
-        const user = await User.findOne({ email }).select("+password");
-        if (!user) throw new ApiError(401, "Invalid credentials");
+        const user = await User.findOne({ email })
+            .select("+password")
+            .populate("organization", "name slug plan");
 
+        if (!user) throw new ApiError(401, "Invalid credentials");
         if (!user.isActive) throw new ApiError(403, "Account is disabled");
 
         const match = await user.comparePassword(password);
@@ -106,7 +147,7 @@ exports.login = async (req, res, next) => {
     }
 };
 
-// POST /api/auth/refresh
+// POST /api/auth/refresh  (unchanged)
 exports.refresh = async (req, res, next) => {
     try {
         const { refreshToken } = req.body;
@@ -128,16 +169,9 @@ exports.refresh = async (req, res, next) => {
 
         if (!user) throw new ApiError(401, "Refresh token not recognized");
 
-        // Remove the old token (rotation)
         user.refreshTokens = user.refreshTokens.filter(
-            (t) => t.tokenHash !== tokenHash
+            (t) => t.tokenHash !== tokenHash && t.expiresAt > new Date()
         );
-
-        // Clean expired ones
-        user.refreshTokens = user.refreshTokens.filter(
-            (t) => t.expiresAt > new Date()
-        );
-
         await user.save({ validateBeforeSave: false });
 
         const tokens = await issueTokens(user);
@@ -152,7 +186,7 @@ exports.refresh = async (req, res, next) => {
     }
 };
 
-// POST /api/auth/logout
+// POST /api/auth/logout  (unchanged)
 exports.logout = async (req, res, next) => {
     try {
         const { refreshToken } = req.body;
@@ -172,13 +206,16 @@ exports.logout = async (req, res, next) => {
     }
 };
 
-// GET /api/auth/me  (protected)
+// GET /api/auth/me  (protected) — now populates organization
 exports.me = async (req, res, next) => {
     try {
-        // req.user is attached by the `protect` middleware
+        const user = await User.findById(req.user._id).populate(
+            "organization",
+            "name slug plan"
+        );
         res.json({
             success: true,
-            data: { user: req.user.toJSON() },
+            data: { user: user.toJSON() },
         });
     } catch (err) {
         next(err);
