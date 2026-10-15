@@ -1,65 +1,50 @@
-// src/models/User.js
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
 
 const userSchema = new mongoose.Schema(
     {
-        firstName: {
-            type: String,
+        organization: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Organization",
             required: true,
-            trim: true,
-            minlength: 2,
-            maxlength: 50,
+            index: true,
         },
-        lastName: {
-            type: String,
-            required: true,
-            trim: true,
-            minlength: 2,
-            maxlength: 50,
-        },
-        email: {
-            type: String,
-            required: true,
-            unique: true,
-            lowercase: true,
-            trim: true,
-        },
-        password: {
-            type: String,
-            required: true,
-            select: false,
-            minlength: 8,
-        },
+        firstName: { type: String, required: true, trim: true, minlength: 2, maxlength: 50 },
+        lastName:  { type: String, required: true, trim: true, minlength: 2, maxlength: 50 },
+        email:     { type: String, required: true, unique: true, lowercase: true, trim: true },
+        password:  { type: String, required: true, select: false, minlength: 8 },
+
         role: {
             type: String,
             enum: ["Owner", "Admin", "Manager", "Technician", "Finance", "Client"],
             default: "Client",
         },
-        phone: {
-            type: String,
+
+        // For Manager → their direct reports (Technicians, Finance, etc.)
+        manager: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
             default: null,
         },
-        isActive: {
-            type: Boolean,
-            default: true,
+
+        // For Client role → which Client document this user represents
+        clientProfile: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Client",
+            default: null,
         },
-        emailVerified: {
-            type: Boolean,
-            default: false,
-        },
-        lastLogin: {
-            type: Date,
-        },
-        // Each entry: { tokenHash, createdAt, expiresAt }
+
+        phone: { type: String, default: null },
+        isActive: { type: Boolean, default: true },
+        emailVerified: { type: Boolean, default: false },
+        lastLogin: { type: Date },
+
         refreshTokens: {
-            type: [
-                {
-                    tokenHash: { type: String, required: true },
-                    createdAt: { type: Date, default: Date.now },
-                    expiresAt: { type: Date, required: true },
-                },
-            ],
+            type: [{
+                tokenHash: { type: String, required: true },
+                createdAt: { type: Date, default: Date.now },
+                expiresAt: { type: Date, required: true },
+            }],
             default: [],
             select: false,
         },
@@ -67,18 +52,15 @@ const userSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-// --- Password hashing ---
 userSchema.pre("save", async function () {
     if (!this.isModified("password")) return;
     this.password = await bcrypt.hash(this.password, 12);
 });
 
-// --- Password comparison ---
 userSchema.methods.comparePassword = async function (password) {
     return bcrypt.compare(password, this.password);
 };
 
-// --- Never leak sensitive fields to JSON ---
 userSchema.set("toJSON", {
     transform: (doc, ret) => {
         delete ret.password;
