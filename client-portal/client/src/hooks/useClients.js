@@ -1,19 +1,22 @@
-import { useEffect, useState } from "react";
-import api from "../api/axios";
+// src/hooks/useClients.js
+import { clientApi } from "../lib/api";
+import { useApi } from "./useApi";
+import { useCallback } from "react";
 
 export function useClients() {
-    const [clients, setClients] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+  const { data, loading, error, refresh, setData } = useApi(
+    () => clientApi.list(),
+    []
+  );
+  const clients = data?.data ?? [];
 
-    useEffect(() => {
-        let cancelled = false;
-        api.get("/clients")
-            .then((res) => { if (!cancelled) setClients(res.data.data); })
-            .catch((e) => { if (!cancelled) setError(e); })
-            .finally(() => { if (!cancelled) setLoading(false); });
-        return () => { cancelled = true; };
-    }, []);
+  const setClients = useCallback(
+    (updater) => {
+      const next = typeof updater === "function" ? updater(clients) : updater;
+      setData({ data: next });
+    },
+    [clients, setData]
+  );
 
-    return { clients, loading, error, setClients };
+  return { clients, loading, error, refresh, setClients };
 }

@@ -29,6 +29,9 @@ const clientSchema = new mongoose.Schema(
         company:     { type: String, default: null },
         address:     { type: String, default: null },
         notes:       { type: String, default: null },
+        vatNumber:   { type: String, default: null },
+companyRegistrationNumber:{ type: String, default: null },
+website:                  { type: String, default: null },
 
         // Status
         status: {

@@ -2,7 +2,13 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 
-const MAX = { name: 60, email: 254, password: 128, phone: 20 };
+const MAX = {
+    companyName: 100,
+    name: 60,
+    email: 254,
+    password: 128,
+    phone: 20,
+};
 
 const PASSWORD_RULES = [
     { test: (v) => v.length >= 12, msg: "At least 12 characters" },
@@ -14,52 +20,91 @@ const PASSWORD_RULES = [
 
 function validate(form) {
     const errors = {};
-    if (!form.firstName.trim()) errors.firstName = "First name is required.";
-    else if (form.firstName.length > MAX.name) errors.firstName = "Too long.";
 
-    if (!form.lastName.trim()) errors.lastName = "Last name is required.";
-    else if (form.lastName.length > MAX.name) errors.lastName = "Too long.";
+    if (!form.companyName.trim()) {
+        errors.companyName = "Company name is required.";
+    } else if (form.companyName.length > MAX.companyName) {
+        errors.companyName = "Too long.";
+    }
+
+    if (!form.firstName.trim()) {
+        errors.firstName = "First name is required.";
+    } else if (form.firstName.length > MAX.name) {
+        errors.firstName = "Too long.";
+    }
+
+    if (!form.lastName.trim()) {
+        errors.lastName = "Last name is required.";
+    } else if (form.lastName.length > MAX.name) {
+        errors.lastName = "Too long.";
+    }
 
     const email = form.email.trim();
-    if (!email) errors.email = "Email is required.";
-    else if (email.length > MAX.email) errors.email = "Email is too long.";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+
+    if (!email) {
+        errors.email = "Email is required.";
+    } else if (email.length > MAX.email) {
+        errors.email = "Email is too long.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         errors.email = "Enter a valid email address.";
+    }
 
     const pw = form.password;
-    if (!pw) errors.password = "Password is required.";
-    else {
-        const failed = PASSWORD_RULES.filter((r) => !r.test(pw)).map((r) => r.msg);
-        if (failed.length) errors.password = `Password needs: ${failed.join(", ")}.`;
+
+    if (!pw) {
+        errors.password = "Password is required.";
+    } else {
+        const failed = PASSWORD_RULES
+            .filter((r) => !r.test(pw))
+            .map((r) => r.msg);
+
+        if (failed.length) {
+            errors.password = `Password needs: ${failed.join(", ")}.`;
+        }
     }
 
     if (form.phone) {
         const phone = form.phone.trim();
-        if (!/^\+?[0-9\s\-()]{7,20}$/.test(phone))
+
+        if (!/^\+?[0-9\s\-()]{7,20}$/.test(phone)) {
             errors.phone = "Enter a valid phone number.";
+        }
     }
+
     return errors;
 }
 
 export default function Register() {
     const { register } = useAuth();
     const navigate = useNavigate();
+
     const [form, setForm] = useState({
-        firstName: "", lastName: "", email: "", password: "", phone: "",
+        companyName: "",
+        firstName: "",
+        lastName: "",
+        email: "",
+        password: "",
+        phone: "",
     });
+
     const [errors, setErrors] = useState({});
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
 
     const submit = async (e) => {
         e.preventDefault();
+
         if (busy) return;
+
         setError("");
+
         const nextErrors = validate(form);
         setErrors(nextErrors);
+
         if (Object.keys(nextErrors).length) return;
 
         const payload = {
+            companyName: form.companyName.trim(),
             firstName: form.firstName.trim(),
             lastName: form.lastName.trim(),
             email: form.email.trim().toLowerCase(),
@@ -68,24 +113,49 @@ export default function Register() {
         };
 
         setBusy(true);
+
         try {
             await register(payload);
             navigate("/", { replace: true });
         } catch (err) {
             const data = err?.response?.data;
             const status = err?.response?.status;
-            const allowed = ["firstName", "lastName", "email", "password", "phone"];
+
+            const allowed = [
+                "companyName",
+                "firstName",
+                "lastName",
+                "email",
+                "password",
+                "phone",
+            ];
+
             if (data?.errors && typeof data.errors === "object") {
                 const safe = {};
+
                 for (const k of allowed) {
                     const v = data.errors[k];
-                    if (typeof v === "string") safe[k] = v;
+                    if (typeof v === "string") {
+                        safe[k] = v;
+                    }
                 }
-                if (Object.keys(safe).length) setErrors(safe);
+
+                if (Object.keys(safe).length) {
+                    setErrors(safe);
+                }
             }
-            if (status === 409) setError("An account with these details already exists.");
-            else if (status === 429) setError("Too many attempts. Please try again later.");
-            else setError("Unable to create account right now. Please try again.");
+
+            if (status === 409) {
+                setError("An account with these details already exists.");
+            } else if (status === 429) {
+                setError("Too many attempts. Please try again later.");
+            } else {
+                setError(
+                    data?.message ||
+                    err?.message ||
+                    "Unable to create account right now. Please try again."
+                );
+            }
         } finally {
             setBusy(false);
         }
@@ -93,19 +163,27 @@ export default function Register() {
 
     const field = (name, label, type = "text", extra = {}) => (
         <div>
-            <label htmlFor={`reg-${name}`} className="label">{label}</label>
+            <label htmlFor={`reg-${name}`} className="label">
+                {label}
+            </label>
+
             <input
                 id={`reg-${name}`}
                 name={name}
                 type={type}
                 value={form[name]}
-                onChange={(e) => setForm({ ...form, [name]: e.target.value })}
+                onChange={(e) =>
+                    setForm({ ...form, [name]: e.target.value })
+                }
                 maxLength={MAX[name] ?? 200}
                 className="input"
                 {...extra}
             />
+
             {errors[name] && (
-                <p className="text-xs text-dangerText mt-1">{errors[name]}</p>
+                <p className="text-xs text-dangerText mt-1">
+                    {errors[name]}
+                </p>
             )}
         </div>
     );
@@ -116,10 +194,14 @@ export default function Register() {
                 <div className="text-navy font-semibold text-lg tracking-wide mb-6">
                     Brand
                 </div>
+
                 <h1 className="text-2xl font-semibold text-slate-900 mb-1">
-                    Create account
+                    Create Account
                 </h1>
-                <p className="text-sm text-slate-500 mb-6">Start using Client Portal</p>
+
+                <p className="text-sm text-slate-500 mb-6">
+                    Start using Client Portal
+                </p>
 
                 {error && (
                     <div
@@ -132,38 +214,58 @@ export default function Register() {
                 )}
 
                 <form onSubmit={submit} className="space-y-4" noValidate>
+                    {field("companyName", "Company Name", "text", {
+                        autoComplete: "organization",
+                        required: true,
+                    })}
+
                     <div className="grid grid-cols-2 gap-3">
-                        {field("firstName", "First name", "text", {
-                            autoComplete: "given-name", required: true,
+                        {field("firstName", "First Name", "text", {
+                            autoComplete: "given-name",
+                            required: true,
                         })}
-                        {field("lastName", "Last name", "text", {
-                            autoComplete: "family-name", required: true,
+
+                        {field("lastName", "Last Name", "text", {
+                            autoComplete: "family-name",
+                            required: true,
                         })}
                     </div>
+
                     {field("email", "Email", "email", {
-                        autoComplete: "email", required: true,
+                        autoComplete: "email",
+                        required: true,
                     })}
+
                     {field("password", "Password", "password", {
-                        autoComplete: "new-password", required: true,
+                        autoComplete: "new-password",
+                        required: true,
                     })}
-                    {field("phone", "Phone (optional)", "tel", {
+
+                    {field("phone", "Phone (Optional)", "tel", {
                         autoComplete: "tel",
                     })}
 
                     <p className="text-xs text-slate-500">
-                        Password must be 12+ characters and include uppercase,
-                        lowercase, a number, and a symbol.
+                        Password must be at least 12 characters and include
+                        uppercase, lowercase, a number and a symbol.
                     </p>
 
-                    <button type="submit" disabled={busy} className="btn-primary w-full">
-                        {busy ? "Creating…" : "Create account"}
+                    <button
+                        type="submit"
+                        disabled={busy}
+                        className="btn-primary w-full"
+                    >
+                        {busy ? "Creating..." : "Create Account"}
                     </button>
                 </form>
 
                 <p className="mt-6 text-sm text-slate-500 text-center">
                     Have an account?{" "}
-                    <Link to="/login" className="text-brand font-medium hover:text-brand-dark">
-                        Sign in
+                    <Link
+                        to="/login"
+                        className="text-brand font-medium hover:text-brand-dark"
+                    >
+                        Sign In
                     </Link>
                 </p>
             </div>

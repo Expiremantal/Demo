@@ -1,60 +1,23 @@
 const express = require("express");
 const router = express.Router();
-const Invoice = require("../models/Invoice");
-const Client = require("../models/Client");
 const { protect } = require("../middleware/auth.middleware");
-const { childScope } = require("../middleware/scope");
+const ctrl = require("../controllers/invoice.controller");
 
-router.get("/", protect, async (req, res, next) => {
-    try {
-        const filter = await childScope(req.user, Client);
-        const invoices = await Invoice.find(filter)
-            .populate("client", "name")
-            .sort({ createdAt: -1 });
-        res.json({ data: invoices });
-    } catch (err) {
-        next(err);
-    }
-});
+router.get("/",      protect, ctrl.list);
+router.get("/:id",   protect, ctrl.get);
+router.post("/",     protect, ctrl.create);
+router.patch("/:id", protect, ctrl.update);
+router.delete("/:id",protect, ctrl.remove);
 
-router.get("/:id", protect, async (req, res, next) => {
-    try {
-        const filter = await childScope(req.user, Client);
-        const invoice = await Invoice.findOne({ _id: req.params.id, ...filter })
-            .populate("client", "name");
-        if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-        res.json({ data: invoice });
-    } catch (err) {
-        next(err);
-    }
-});
+router.post("/:id/send", protect, ctrl.send);
 
-router.post("/", protect, async (req, res, next) => {
-    try {
-        const invoice = await Invoice.create({
-            ...req.body,
-            organization: req.user.organization,
-            createdBy: req.user._id,
-        });
-        res.status(201).json({ data: invoice });
-    } catch (err) {
-        next(err);
-    }
-});
+router.post("/:id/items",           protect, ctrl.addItem);
+router.patch("/:id/items/:itemId",  protect, ctrl.updateItem);
+router.delete("/:id/items/:itemId", protect, ctrl.removeItem);
 
-router.patch("/:id", protect, async (req, res, next) => {
-    try {
-        const filter = await childScope(req.user, Client);
-        const invoice = await Invoice.findOneAndUpdate(
-            { _id: req.params.id, ...filter },
-            { $set: req.body },
-            { new: true, runValidators: true }
-        );
-        if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-        res.json({ data: invoice });
-    } catch (err) {
-        next(err);
-    }
-});
+router.post("/:id/payments", protect, ctrl.recordPayment);
+router.get("/:id/payments",  protect, ctrl.listPayments);
+
+router.post("/:id/documents", protect, ctrl.attachDocument);
 
 module.exports = router;

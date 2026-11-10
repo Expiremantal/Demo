@@ -8,6 +8,10 @@ const {
     verifyRefreshToken,
     hashToken,
 } = require("../utils/jwt");
+const Role = require("../models/Role");
+const UserRole = require("../models/UserRole");
+const { seedRolesForOrg } = require("../../seeds/roles");
+
 
 const REFRESH_DAYS = 7;
 
@@ -55,62 +59,65 @@ function slugify(name) {
 // First user of a new company → creates Organization + is Owner
 exports.register = async (req, res, next) => {
     try {
-        const { firstName, lastName, email, password, phone, companyName } = req.body;
+  const { firstName, lastName, email, password, phone, companyName } = req.body;
 
-        if (!companyName) {
-            throw new ApiError(400, "companyName is required");
-        }
+  if (!companyName) throw new ApiError(400, "companyName is required");
 
-        const existing = await User.findOne({ email });
-        if (existing) {
-            throw new ApiError(409, "Email already registered");
-        }
+  const existing = await User.findOne({ email });
+  if (existing) throw new ApiError(409, "Email already registered");
 
-        // 1. Create the organization
-        //    Owner field is set after we create the user (circular ref), so:
-        //    — create user first with a placeholder, then set org.owner
-        //    OR — create org without owner, then set both. We'll do the latter.
-        const org = await Organization.create({
-            name: companyName,
-            slug: slugify(companyName),
-            owner: new (require("mongoose").Types.ObjectId)(), // temp, set below
-        });
+  // 1. Create the organization (owner placeholder)
+  const org = await Organization.create({
+    name: companyName,
+    slug: slugify(companyName),
+    owner: new (require("mongoose").Types.ObjectId)(),
+  });
 
-        // 2. Create the owner user
-        const user = await User.create({
-            organization: org._id,
-            firstName,
-            lastName,
-            email,
-            password,
-            phone: phone || null,
-            role: "Owner",              // 🎯 first user is Owner
-        });
+  // 2. Seed the 6 built-in roles for this org
+  await seedRolesForOrg(org._id);
 
-        // 3. Now link org.owner to the real user
-        org.owner = user._id;
-        await org.save();
+  // 3. Create the owner user
+  const user = await User.create({
+    organization: org._id,
+    firstName,
+    lastName,
+    email,
+    password,
+    phone: phone || null,
+    role: "Owner",
+  });
 
-        // 4. Issue tokens
-        const { accessToken, refreshToken } = await issueTokens(user);
+  // 4. Link the user to the Owner role
+  const ownerRole = await Role.findOne({ organization: org._id, name: "Owner" });
+  if (ownerRole) {
+    await UserRole.create({
+      organization: org._id,
+      user: user._id,
+      role: ownerRole._id,
+      assignedBy: user._id,
+    });
+  }
 
-        res.status(201).json({
-            success: true,
-            message: "Account and organization created",
-            data: {
-                user: user.toJSON(),
-                organization: {
-                    _id: org._id,
-                    name: org.name,
-                    slug: org.slug,
-                },
-                accessToken,
-                refreshToken,
-            },
-        });
-    } catch (err) {
-        next(err);
-    }
+  // 5. Link org.owner to the real user
+  org.owner = user._id;
+  await org.save();
+
+  // 6. Issue tokens
+  const { accessToken, refreshToken } = await issueTokens(user);
+
+  res.status(201).json({
+    success: true,
+    message: "Account and organization created",
+    data: {
+      user: user.toJSON(),
+      organization: { _id: org._id, name: org.name, slug: org.slug },
+      accessToken,
+      refreshToken,
+    },
+  });
+} catch (err) {
+  next(err);
+}
 };
 
 // POST /api/auth/login  (unchanged, but populate org)

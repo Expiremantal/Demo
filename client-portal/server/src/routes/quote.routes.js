@@ -1,60 +1,21 @@
 const express = require("express");
 const router = express.Router();
-const Quote = require("../models/Quote");
-const Client = require("../models/Client");
 const { protect } = require("../middleware/auth.middleware");
-const { childScope } = require("../middleware/scope");
+const ctrl = require("../controllers/quote.controller");
 
-router.get("/", protect, async (req, res, next) => {
-    try {
-        const filter = await childScope(req.user, Client);
-        const quotes = await Quote.find(filter)
-            .populate("client", "name")
-            .sort({ createdAt: -1 });
-        res.json({ data: quotes });
-    } catch (err) {
-        next(err);
-    }
-});
+router.get("/",      protect, ctrl.list);
+router.get("/:id",   protect, ctrl.get);
+router.post("/",     protect, ctrl.create);
+router.patch("/:id", protect, ctrl.update);
+router.delete("/:id",protect, ctrl.remove);
 
-router.get("/:id", protect, async (req, res, next) => {
-    try {
-        const filter = await childScope(req.user, Client);
-        const quote = await Quote.findOne({ _id: req.params.id, ...filter })
-            .populate("client", "name");
-        if (!quote) return res.status(404).json({ error: "Quote not found" });
-        res.json({ data: quote });
-    } catch (err) {
-        next(err);
-    }
-});
+router.post("/:id/items",            protect, ctrl.addItem);
+router.patch("/:id/items/:itemId",   protect, ctrl.updateItem);
+router.delete("/:id/items/:itemId",  protect, ctrl.removeItem);
 
-router.post("/", protect, async (req, res, next) => {
-    try {
-        const quote = await Quote.create({
-            ...req.body,
-            organization: req.user.organization,
-            createdBy: req.user._id,
-        });
-        res.status(201).json({ data: quote });
-    } catch (err) {
-        next(err);
-    }
-});
-
-router.patch("/:id", protect, async (req, res, next) => {
-    try {
-        const filter = await childScope(req.user, Client);
-        const quote = await Quote.findOneAndUpdate(
-            { _id: req.params.id, ...filter },
-            { $set: req.body },
-            { new: true, runValidators: true }
-        );
-        if (!quote) return res.status(404).json({ error: "Quote not found" });
-        res.json({ data: quote });
-    } catch (err) {
-        next(err);
-    }
-});
+router.post("/:id/send",             protect, ctrl.send);
+router.post("/:id/accept",           protect, ctrl.accept);
+router.post("/:id/reject",           protect, ctrl.reject);
+router.post("/:id/convert-to-invoice", protect, ctrl.convertToInvoice);
 
 module.exports = router;

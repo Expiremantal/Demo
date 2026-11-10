@@ -1,3 +1,4 @@
+// src/context/AuthContext.jsx
 import {
     createContext,
     useCallback,
@@ -14,14 +15,13 @@ export function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
 
-    // On mount: if we have a token, fetch /me to hydrate user
+    // On mount: hydrate user if we already have an access token
     useEffect(() => {
         const access = tokenStore.getAccess();
         if (!access) {
             setIsLoading(false);
             return;
         }
-
         api.get("/auth/me")
             .then((res) => setUser(res.data.data.user))
             .catch(() => {
@@ -33,16 +33,18 @@ export function AuthProvider({ children }) {
 
     const login = useCallback(async (email, password) => {
         const { data } = await api.post("/auth/login", { email, password });
-        tokenStore.set(data.data.accessToken, data.data.refreshToken);
-        setUser(data.data.user);
-        return data.data.user;
+        const { user, accessToken, refreshToken } = data.data;
+        tokenStore.set(accessToken, refreshToken);   // ← tokenStore.set
+        setUser(user);
+        return user;
     }, []);
 
     const register = useCallback(async (payload) => {
         const { data } = await api.post("/auth/register", payload);
-        tokenStore.set(data.data.accessToken, data.data.refreshToken);
-        setUser(data.data.user);
-        return data.data.user;
+        const { user, accessToken, refreshToken } = data.data;
+        tokenStore.set(accessToken, refreshToken);   // ← tokenStore.set
+        setUser(user);
+        return user;
     }, []);
 
     const logout = useCallback(async () => {
@@ -50,7 +52,7 @@ export function AuthProvider({ children }) {
         try {
             if (refresh) await api.post("/auth/logout", { refreshToken: refresh });
         } catch {
-            // ignore — we're logging out anyway
+            /* ignore */
         }
         tokenStore.clear();
         setUser(null);
@@ -71,7 +73,6 @@ export function AuthProvider({ children }) {
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// ✅ Custom hook so components can consume the context safely
 export function useAuth() {
     const ctx = useContext(AuthContext);
     if (!ctx) {

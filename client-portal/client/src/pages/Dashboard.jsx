@@ -1,130 +1,267 @@
-import { Navigate } from "react-router-dom";
+// src/pages/Dashboard.jsx
+import { useEffect, useState } from "react";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-
-const cards = [
-    { label: "Open requests", value: "00", sub: "R 000,000" },
-    { label: "Pending quotes", value: "00", sub: "R 000,000" },
-    { label: "Outstanding invoices", value: "00", sub: "R 000,000" },
-    { label: "Overdue invoices", value: "00", sub: "R 000,000", danger: true },
-];
-
-const panels = [
-    "Quotes awaiting approval",
-    "Requests requiring attention",
-    "Invoices awaiting approval",
-];
+import { requestApi, quoteApi, invoiceApi, notificationApi } from "../lib/api";
+import { R, timeAgo } from "../lib/format";
+import { adaptQuote, adaptInvoice, adaptRequest } from "../lib/adapters";
 
 export default function Dashboard() {
-    const { user, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
+  const navigate = useNavigate();
 
-    if (isLoading) {
-        return <div className="text-sm text-slate-500 py-20 text-center">Loading…</div>;
+  const [pendingQuotes, setPendingQuotes] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [pendingInvoices, setPendingInvoices] = useState([]);
+  const [openRequests, setOpenRequests] = useState(0);
+  const [outstanding, setOutstanding] = useState({ count: 0, amount: 0 });
+  const [overdue, setOverdue] = useState({ count: 0, amount: 0 });
+  const [activity, setActivity] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const [q, r, inv, notes] = await Promise.all([
+          quoteApi.list(),
+          requestApi.list(),
+          invoiceApi.list(),
+          notificationApi.list({ limit: 5 }),
+        ]);
+        if (cancelled) return;
+
+        const quotes = (q.data.data || []).map(adaptQuote);
+        const requests = (r.data.data || []).map(adaptRequest);
+        const invoices = (inv.data.data || []).map(adaptInvoice);
+        const notifs = notes.data.data || [];
+
+        setPendingQuotes(quotes.filter((x) => x.rawStatus === "sent"));
+        setPendingRequests(requests.filter((x) => x.rawStatus === "pending"));
+        setPendingInvoices(
+          invoices.filter((x) => x.rawStatus === "draft")
+        );
+        setOpenRequests(
+          requests.filter((x) => ["Pending", "In progress"].includes(x.status)).length
+        );
+
+        const out = invoices.filter((i) =>
+          ["Sent", "Overdue"].includes(i.status)
+        );
+        setOutstanding({
+          count: out.length,
+          amount: out.reduce((t, i) => t + i.amountDue, 0),
+        });
+
+        const od = invoices.filter((i) => i.status === "Overdue");
+        setOverdue({
+          count: od.length,
+          amount: od.reduce((t, i) => t + i.amountDue, 0),
+        });
+
+        setActivity(notifs);
+      } catch (err) {
+        console.error("Dashboard load failed", err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-    if (!user) return <Navigate to="/login" replace />;
 
-    const displayName =
-        typeof user.firstName === "string" && user.firstName.trim()
-            ? user.firstName.trim().slice(0, 40)
-            : "there";
+    load();
+    return () => { cancelled = true; };
+  }, [user]);
 
-    return (
-        <div className="space-y-6">
-            {/* Page header */}
-            <div className="flex items-start justify-between">
-                <div>
-                    <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-                    <p className="text-sm text-slate-500">What needs you today</p>
-                </div>
-                <div className="flex gap-2">
-                    <button type="button" className="btn-outline">
-                        New client
-                    </button>
-                    <button type="button" className="btn-primary">
-                        New request
-                    </button>
-                </div>
-            </div>
+  if (isLoading) {
+    return <div className="text-sm text-slate-500 py-20 text-center">Loading…</div>;
+  }
+  if (!user) return <Navigate to="/login" replace />;
 
-            {/* Three attention panels */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {panels.map((title) => (
-                    <div key={title} className="card">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-sm font-semibold text-slate-800">
-                                {title}
-                            </h3>
-                            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium">
-                                0
-                            </span>
-                        </div>
-                        <div className="space-y-3">
-                            {[1, 2].map((i) => (
-                                <div
-                                    key={i}
-                                    className="flex items-center justify-between border-t border-slate-100 pt-3 first:border-0 first:pt-0"
-                                >
-                                    <div>
-                                        <div className="text-sm font-medium text-slate-800">
-                                            Placeholder
-                                        </div>
-                                        <div className="text-xs text-slate-500">
-                                            Client name, awaiting 0 days
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <button type="button" className="btn-outline btn-sm">
-                                            Review
-                                        </button>
-                                        <button type="button" className="btn-primary btn-sm">
-                                            Approve
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Summary stat cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                {cards.map((c) => (
-                    <div
-                        key={c.label}
-                        className={[
-                            "rounded-xl shadow-card p-5",
-                            c.danger ? "bg-dangerBg" : "bg-white",
-                        ].join(" ")}
-                    >
-                        <div className="text-sm text-slate-500">{c.label}</div>
-                        <div className="text-3xl font-semibold mt-1 text-slate-900">
-                            {c.value}
-                        </div>
-                        <div className="text-sm text-slate-500 mt-1">{c.sub}</div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Recent activity */}
-            <div className="card">
-                <h3 className="text-sm font-semibold text-slate-800 mb-4">
-                    Recent activity
-                </h3>
-                {[
-                    ["Quote generated", "Client name, time"],
-                    ["Quote accepted", "Client name, time"],
-                    ["Invoice sent", "Client name, time"],
-                    ["Payment received", "Client name, time"],
-                ].map(([label, meta]) => (
-                    <div
-                        key={label}
-                        className="flex items-center justify-between py-3 border-t border-slate-100 first:border-0"
-                    >
-                        <span className="text-sm text-slate-700">{label}</span>
-                        <span className="text-xs text-slate-500">{meta}</span>
-                    </div>
-                ))}
-            </div>
+  return (
+    <div className="space-y-6">
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="page-h1">Dashboard</h1>
+          <p className="page-sub">What needs you today</p>
         </div>
-    );
+        <div className="flex gap-2">
+          <button className="btn-outline" onClick={() => navigate("/clients")}>
+            New client
+          </button>
+          <button className="btn-primary" onClick={() => navigate("/requests?new=1")}>
+            New request
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-sm text-slate-500 py-10 text-center">Loading data…</div>
+      ) : (
+        <>
+          {/* Three attention panels */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Panel
+              title="Quotes awaiting approval"
+              count={pendingQuotes.length}
+              empty="All quotes approved"
+              viewAll="/quotes"
+            >
+              {pendingQuotes.slice(0, 3).map((q) => (
+                <Row
+                  key={q.id}
+                  title={q.number}
+                  meta={`${q.client} · ${R(q.amount)}`}
+                  onReview={() => navigate(`/quotes?open=${q.id}`)}
+                />
+              ))}
+            </Panel>
+
+            <Panel
+              title="Requests requiring attention"
+              count={pendingRequests.length}
+              empty="Nothing needs attention"
+              viewAll="/requests"
+            >
+              {pendingRequests.slice(0, 3).map((r) => (
+                <Row
+                  key={r.id}
+                  title={r.title}
+                  meta={`${r.client} · ${r.priority} priority`}
+                  onReview={() => navigate(`/requests?open=${r.id}`)}
+                />
+              ))}
+            </Panel>
+
+            <Panel
+              title="Invoice drafts to send"
+              count={pendingInvoices.length}
+              empty="No invoices waiting to send"
+              viewAll="/invoices"
+            >
+              {pendingInvoices.slice(0, 3).map((i) => (
+                <Row
+                  key={i.id}
+                  title={i.number}
+                  meta={`${i.client} · ${R(i.amount)}`}
+                  onReview={() => navigate(`/invoices?open=${i.id}`)}
+                />
+              ))}
+            </Panel>
+          </div>
+
+          {/* KPI cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="kpi">
+              <div className="kpi-label">Open requests</div>
+              <div className="kpi-value">{openRequests}</div>
+              <div className="kpi-meta">Pending or in progress</div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Pending quotes</div>
+              <div className="kpi-value">{pendingQuotes.length}</div>
+              <div className="kpi-meta">
+                {R(pendingQuotes.reduce((t, q) => t + q.amount, 0))}
+              </div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Outstanding invoices</div>
+              <div className="kpi-value">{outstanding.count}</div>
+              <div className="kpi-meta">{R(outstanding.amount)}</div>
+            </div>
+            <div className="kpi kpi-danger">
+              <div className="kpi-label">Overdue invoices</div>
+              <div className="kpi-value">{overdue.count}</div>
+              <div className="kpi-meta">{R(overdue.amount)}</div>
+            </div>
+          </div>
+
+          {/* Recent activity */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-ink">Recent activity</h2>
+              <Link to="/notifications" className="text-xs font-semibold text-brand hover:underline">
+                View all
+              </Link>
+            </div>
+            {activity.length === 0 ? (
+              <div className="text-sm text-mute py-4 text-center">
+                No recent activity yet.
+              </div>
+            ) : (
+              activity.map((n) => (
+                <div key={n._id} className="act">
+                  <div className={`dot t-${dotTone(n.type)}`}>{dotIcon(n.type)}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-ink truncate">{n.title}</div>
+                    {n.message && (
+                      <div className="text-xs text-mute truncate">{n.message}</div>
+                    )}
+                  </div>
+                  <div className="text-xs text-mute shrink-0">
+                    {timeAgo(n.createdAt)}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------- subcomponents ---------- */
+
+function Panel({ title, count, empty, viewAll, children }) {
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between pb-2">
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        <span className="tag t-warn">{count}</span>
+      </div>
+      {count === 0 ? (
+        <div className="text-sm text-mute py-4 text-center">{empty}</div>
+      ) : (
+        <>
+          {children}
+          {viewAll && count > 3 && (
+            <Link to={viewAll} className="block text-xs font-semibold text-brand mt-2 hover:underline">
+              View all {count} →
+            </Link>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Row({ title, meta, onReview }) {
+  return (
+    <div className="row">
+      <div>
+        <div className="row-title">{title}</div>
+        <div className="row-meta">{meta}</div>
+      </div>
+      <button className="btn-outline btn-sm" onClick={onReview}>
+        Review
+      </button>
+    </div>
+  );
+}
+
+function dotTone(type) {
+  if (["quote_accepted", "payment_received"].includes(type)) return "ok";
+  if (["quote_rejected", "invoice_overdue"].includes(type)) return "bad";
+  if (["quote_sent", "invoice_sent", "request_assigned"].includes(type)) return "info";
+  return "info";
+}
+
+function dotIcon(type) {
+  if (type === "payment_received") return "R";
+  if (type === "quote_accepted") return "✓";
+  if (type === "quote_rejected") return "✕";
+  if (type === "invoice_sent") return "➤";
+  if (type === "request_assigned") return "+";
+  return "•";
 }
