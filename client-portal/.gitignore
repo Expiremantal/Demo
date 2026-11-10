@@ -18,3 +18,7 @@ npm-debug.log*
 .idea/
 .DS_Store
 .vite/
+
+Add-Content .gitignore "client-portal-backup/"
+Add-Content .gitignore "*-backup/"
+Add-Content .gitignore "*-save/"

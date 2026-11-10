@@ -20,4 +20,6 @@ npm-debug.log*
 Thumbs.db
 
 # VS Code (optional)
-.vscode/
+.vscode/client-portal-backup/
+*-backup/
+*-save/
